@@ -14,7 +14,19 @@ from os import PathLike
 from pathlib import Path
 from typing import Final
 
-from .models import Address, Host, Hostname, Port, RunStats, Scan, ScanInfo, Service
+from .models import (
+    Address,
+    Host,
+    Hostname,
+    OSClass,
+    OSMatch,
+    Port,
+    RunStats,
+    Scan,
+    ScanInfo,
+    Script,
+    Service,
+)
 
 _HOST_TAG: Final = "host"
 _RUNSTATS_TAG: Final = "runstats"
@@ -109,6 +121,11 @@ def _parse_host(element: ET.Element) -> Host:
             if hostname.get("name")
         ],
         ports=ports,
+        scripts=_parse_scripts(element),
+        os_matches=_parse_os_matches(element),
+        starttime=_optional_int(element.get("starttime")),
+        endtime=_optional_int(element.get("endtime")),
+        comment=element.get("comment", ""),
     )
 
 
@@ -137,7 +154,45 @@ def _parse_port(element: ET.Element) -> Port | None:
             if service is not None
             else None
         ),
+        scripts=_parse_scripts(element),
     )
+
+
+def _parse_scripts(element: ET.Element) -> list[Script]:
+    return [
+        Script(id=script.get("id", ""), output=script.get("output", ""))
+        for script in element.findall("script")
+        if script.get("id")
+    ]
+
+
+def _parse_os_matches(element: ET.Element) -> list[OSMatch]:
+    os_element = element.find("os")
+    if os_element is None:
+        return []
+
+    matches: list[OSMatch] = []
+    for match in os_element.findall("osmatch"):
+        name = match.get("name", "")
+        if not name:
+            continue
+        matches.append(
+            OSMatch(
+                name=name,
+                accuracy=_int_attr(match, "accuracy"),
+                os_classes=[
+                    OSClass(
+                        os_type=osclass.get("type", ""),
+                        vendor=osclass.get("vendor", ""),
+                        osfamily=osclass.get("osfamily", ""),
+                        osgen=osclass.get("osgen", ""),
+                        accuracy=_int_attr(osclass, "accuracy"),
+                    )
+                    for osclass in match.findall("osclass")
+                ],
+            )
+        )
+    return matches
 
 
 def _parse_runstats(element: ET.Element | None) -> RunStats:
