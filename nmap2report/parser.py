@@ -14,7 +14,7 @@ from os import PathLike
 from pathlib import Path
 from typing import Final
 
-from .models import Address, Host, RunStats, Scan, ScanInfo
+from .models import Address, Host, Hostname, Port, RunStats, Scan, ScanInfo, Service
 
 _HOST_TAG: Final = "host"
 _RUNSTATS_TAG: Final = "runstats"
@@ -84,6 +84,14 @@ def _parse_scan_info(element: ET.Element) -> ScanInfo:
 
 def _parse_host(element: ET.Element) -> Host:
     status = element.find("status")
+    ports: list[Port] = []
+    ports_element = element.find("ports")
+    if ports_element is not None:
+        for port_element in ports_element.findall("port"):
+            port = _parse_port(port_element)
+            if port is not None:
+                ports.append(port)
+
     return Host(
         status=status.get("state", "unknown") if status is not None else "unknown",
         addresses=[
@@ -95,6 +103,40 @@ def _parse_host(element: ET.Element) -> Host:
             for address in element.findall("address")
             if address.get("addr")
         ],
+        hostnames=[
+            Hostname(name=hostname.get("name", ""), type=hostname.get("type", ""))
+            for hostname in element.findall("hostnames/hostname")
+            if hostname.get("name")
+        ],
+        ports=ports,
+    )
+
+
+def _parse_port(element: ET.Element) -> Port | None:
+    portid = _optional_int(element.get("portid"))
+    if portid is None:
+        return None
+
+    state = element.find("state")
+    service = element.find("service")
+    return Port(
+        portid=portid,
+        protocol=element.get("protocol", ""),
+        state=state.get("state", "unknown") if state is not None else "unknown",
+        reason=state.get("reason", "") if state is not None else "",
+        service=(
+            Service(
+                name=service.get("name", ""),
+                product=service.get("product", ""),
+                version=service.get("version", ""),
+                extrainfo=service.get("extrainfo", ""),
+                tunnel=service.get("tunnel", ""),
+                method=service.get("method", ""),
+                conf=service.get("conf", ""),
+            )
+            if service is not None
+            else None
+        ),
     )
 
 
