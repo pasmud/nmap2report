@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import textwrap
 
+import pytest
+
 from nmap2report.parser import NmapParseError, parse_file, parse_string
 
 SAMPLE_XML = textwrap.dedent(
@@ -150,3 +152,84 @@ def test_wrong_root_raises_clear_error() -> None:
         assert "<report>" in str(exc)
     else:
         raise AssertionError("NmapParseError was not raised")
+
+
+def test_parse_scripts_and_os_matches() -> None:
+    scan = parse_string(SAMPLE_XML)
+    web = scan.hosts[0]
+    assert len(web.os_matches) == 1
+    match = web.os_matches[0]
+    assert match.name == "Linux 5.0 - 5.14"
+    assert match.accuracy == 98
+    assert len(match.os_classes) == 1
+    assert match.os_classes[0].vendor == "Linux"
+    assert match.os_classes[0].osfamily == "Linux"
+    assert match.os_classes[0].osgen == "5.X"
+    assert match.os_classes[0].accuracy == 98
+
+    db = scan.hosts[1]
+    assert [script.id for script in db.scripts] == ["hostscript"]
+    assert db.scripts[0].output == "OS: Linux 5.15"
+    assert [script.id for script in db.ports[1].scripts] == ["redis-info"]
+    assert db.ports[1].scripts[0].output == (
+        "redis_version:7.0.15\nconnected_clients:1"
+    )
+
+
+def test_missing_optional_sections_use_defaults() -> None:
+    scan = parse_string(
+        "<nmaprun><host><address addr='192.0.2.1' addrtype='ipv4'/></host></nmaprun>"
+    )
+    assert scan.args == ""
+    assert scan.start is None
+    assert scan.scan_info == []
+    assert scan.runstats.hosts_total == 0
+    assert scan.runstats.elapsed == 0.0
+    host = scan.hosts[0]
+    assert host.status == "unknown"
+    assert host.ports == []
+    assert host.scripts == []
+    assert host.os_matches == []
+    assert host.display_name == "192.0.2.1"
+
+
+def test_malformed_numeric_attributes_fall_back() -> None:
+    scan = parse_string(
+        """<nmaprun start="not-a-number">
+        <host><status state="up"/>
+          <ports>
+            <port protocol="tcp" portid="abc"><state state="open"/></port>
+            <port protocol="tcp" portid="8080"><state state="open"/></port>
+          </ports>
+          <os><osmatch name="Unknown" accuracy="high"/></os>
+        </host>
+        <runstats><finished elapsed="oops"/><hosts up="x" down="2" total="3"/></runstats>
+        </nmaprun>"""
+    )
+    assert scan.start is None
+    assert [port.portid for port in scan.hosts[0].ports] == [8080]
+    assert scan.hosts[0].os_matches[0].accuracy == 0
+    assert scan.runstats.hosts_up == 0
+    assert scan.runstats.hosts_down == 2
+    assert scan.runstats.elapsed == 0.0
+
+
+def test_invalid_xml_raises_nmap_parse_error() -> None:
+    with pytest.raises(NmapParseError, match="invalid XML"):
+        parse_string("<nmaprun><host></nmaprun>")
+
+
+def test_empty_addresses_and_scripts_are_skipped() -> None:
+    scan = parse_string(
+        """<nmaprun><host>
+        <address addrtype="ipv4"/>
+        <script output="no id"/>
+        </host></nmaprun>"""
+    )
+    assert scan.hosts[0].addresses == []
+    assert scan.hosts[0].scripts == []
+
+
+def test_missing_file_raises_oserror(tmp_path) -> None:
+    with pytest.raises(FileNotFoundError):
+        parse_file(tmp_path / "absent.xml")
