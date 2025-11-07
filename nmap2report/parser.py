@@ -96,31 +96,11 @@ def _parse_scan_info(element: ET.Element) -> ScanInfo:
 
 def _parse_host(element: ET.Element) -> Host:
     status = element.find("status")
-    ports: list[Port] = []
-    ports_element = element.find("ports")
-    if ports_element is not None:
-        for port_element in ports_element.findall("port"):
-            port = _parse_port(port_element)
-            if port is not None:
-                ports.append(port)
-
     return Host(
         status=status.get("state", "unknown") if status is not None else "unknown",
-        addresses=[
-            Address(
-                addr=address.get("addr", ""),
-                addrtype=address.get("addrtype", ""),
-                vendor=address.get("vendor", ""),
-            )
-            for address in element.findall("address")
-            if address.get("addr")
-        ],
-        hostnames=[
-            Hostname(name=hostname.get("name", ""), type=hostname.get("type", ""))
-            for hostname in element.findall("hostnames/hostname")
-            if hostname.get("name")
-        ],
-        ports=ports,
+        addresses=_parse_addresses(element),
+        hostnames=_parse_hostnames(element),
+        ports=_parse_ports(element),
         scripts=_parse_scripts(element),
         os_matches=_parse_os_matches(element),
         starttime=_optional_int(element.get("starttime")),
@@ -129,32 +109,66 @@ def _parse_host(element: ET.Element) -> Host:
     )
 
 
+def _parse_addresses(element: ET.Element) -> list[Address]:
+    return [
+        Address(
+            addr=address.get("addr", ""),
+            addrtype=address.get("addrtype", ""),
+            vendor=address.get("vendor", ""),
+        )
+        for address in element.findall("address")
+        if address.get("addr")
+    ]
+
+
+def _parse_hostnames(element: ET.Element) -> list[Hostname]:
+    return [
+        Hostname(name=hostname.get("name", ""), type=hostname.get("type", ""))
+        for hostname in element.findall("hostnames/hostname")
+        if hostname.get("name")
+    ]
+
+
+def _parse_ports(element: ET.Element) -> list[Port]:
+    ports_element = element.find("ports")
+    if ports_element is None:
+        return []
+
+    ports: list[Port] = []
+    for port_element in ports_element.findall("port"):
+        port = _parse_port(port_element)
+        if port is not None:
+            ports.append(port)
+    return ports
+
+
 def _parse_port(element: ET.Element) -> Port | None:
     portid = _optional_int(element.get("portid"))
     if portid is None:
         return None
 
     state = element.find("state")
-    service = element.find("service")
     return Port(
         portid=portid,
         protocol=element.get("protocol", ""),
         state=state.get("state", "unknown") if state is not None else "unknown",
         reason=state.get("reason", "") if state is not None else "",
-        service=(
-            Service(
-                name=service.get("name", ""),
-                product=service.get("product", ""),
-                version=service.get("version", ""),
-                extrainfo=service.get("extrainfo", ""),
-                tunnel=service.get("tunnel", ""),
-                method=service.get("method", ""),
-                conf=service.get("conf", ""),
-            )
-            if service is not None
-            else None
-        ),
+        service=_parse_service(element.find("service")),
         scripts=_parse_scripts(element),
+    )
+
+
+def _parse_service(element: ET.Element | None) -> Service | None:
+    if element is None:
+        return None
+    return Service(
+        name=element.get("name", ""),
+        product=element.get("product", ""),
+        version=element.get("version", ""),
+        extrainfo=element.get("extrainfo", ""),
+        tunnel=element.get("tunnel", ""),
+        method=element.get("method", ""),
+        conf=element.get("conf", ""),
     )
 
 
