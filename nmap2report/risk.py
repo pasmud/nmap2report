@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Final
 
-from .models import Host, Port, Service
+from .models import Host, Port, Scan, Service
 
 
 class Severity(str, Enum):
@@ -85,6 +85,31 @@ class RiskFinding:
     severity: Severity
     rationale: str
     note: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class RiskAssessment:
+    """Aggregated findings for a host or an entire scan."""
+
+    findings: tuple[RiskFinding, ...]
+
+    @property
+    def counts(self) -> dict[Severity, int]:
+        """Finding counts for every severity, including zero counts."""
+        counts = {severity: 0 for severity in Severity}
+        for finding in self.findings:
+            counts[finding.severity] += 1
+        return counts
+
+    @property
+    def score(self) -> int:
+        """Sum of severity weights; useful only for rough prioritization."""
+        return sum(finding.severity.weight for finding in self.findings)
+
+    @property
+    def highest(self) -> Severity | None:
+        """The most severe finding level, or ``None`` when there are no findings."""
+        return self.findings[0].severity if self.findings else None
 
 
 _TELNET = PortRule(
@@ -262,4 +287,39 @@ def assess_port(host: Host, port: Port) -> RiskFinding | None:
         severity=rule.severity,
         rationale=rule.rationale,
         note=_version_note(service),
+    )
+
+
+def assess_host(host: Host) -> RiskAssessment:
+    """Assess all open ports on *host* and return findings sorted by severity."""
+    if not host.is_up:
+        return RiskAssessment(())
+
+    findings = [
+        finding
+        for port in host.ports
+        if (finding := assess_port(host, port)) is not None
+    ]
+    return RiskAssessment(_sort_findings(findings))
+
+
+def assess_scan(scan: Scan) -> RiskAssessment:
+    """Assess every up host in *scan* and aggregate the findings."""
+    findings = [
+        finding for host in scan.hosts for finding in assess_host(host).findings
+    ]
+    return RiskAssessment(_sort_findings(findings))
+
+
+def _sort_findings(findings: list[RiskFinding]) -> tuple[RiskFinding, ...]:
+    return tuple(
+        sorted(
+            findings,
+            key=lambda finding: (
+                -finding.severity.rank,
+                finding.host.lower(),
+                finding.port,
+                finding.protocol,
+            ),
+        )
     )
