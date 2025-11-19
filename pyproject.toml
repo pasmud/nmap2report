@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,19 +8,19 @@ version = "0.1.0"
 description = "Convert nmap XML scans into self-contained HTML, Markdown, and CSV reports"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
-authors = [{ name = "pasmud", email = "pa.sen@outlook.com" }]
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "pasmud" }]
 keywords = ["nmap", "security", "reporting", "xml", "network-scan"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
     "Environment :: Console",
     "Intended Audience :: System Administrators",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Security",
     "Topic :: System :: Networking",
 ]
@@ -33,9 +33,6 @@ dev = ["pytest>=8.0", "ruff>=0.6"]
 
 [tool.setuptools.packages.find]
 include = ["nmap2report*"]
-
-[tool.setuptools.package-data]
-nmap2report = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

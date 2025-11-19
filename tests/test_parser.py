@@ -6,6 +6,7 @@ import textwrap
 
 import pytest
 
+from nmap2report import parser
 from nmap2report.parser import NmapParseError, parse_file, parse_string
 
 SAMPLE_XML = textwrap.dedent(
@@ -208,7 +209,7 @@ def test_malformed_numeric_attributes_fall_back() -> None:
     )
     assert scan.start is None
     assert [port.portid for port in scan.hosts[0].ports] == [8080]
-    assert scan.hosts[0].os_matches[0].accuracy == 0
+    assert scan.hosts[0].os_matches[0].accuracy is None
     assert scan.runstats.hosts_up == 0
     assert scan.runstats.hosts_down == 2
     assert scan.runstats.elapsed == 0.0
@@ -233,3 +234,69 @@ def test_empty_addresses_and_scripts_are_skipped() -> None:
 def test_missing_file_raises_oserror(tmp_path) -> None:
     with pytest.raises(FileNotFoundError):
         parse_file(tmp_path / "absent.xml")
+
+
+@pytest.mark.parametrize("encoding", ["utf-8", "utf-16"])
+@pytest.mark.parametrize("declaration", [
+    '<!DOCTYPE nmaprun SYSTEM "sample.dtd">',
+    '<!DOCTYPE nmaprun [<!ENTITY example "synthetic text">]>',
+    '<!DOCTYPE nmaprun []>',
+])
+def test_dtds_with_subsets_are_rejected(declaration, encoding) -> None:
+    with pytest.raises(NmapParseError, match="only a bare"):
+        parse_string(f"{declaration}<nmaprun/>".encode(encoding))
+
+
+def test_standard_entities_and_local_xml_encoding() -> None:
+    xml = '<?xml version="1.0" encoding="UTF-16"?><!DOCTYPE nmaprun>'
+    xml += '<nmaprun args="été &amp; demo &#x3C;"/>'
+    assert parse_string(xml.encode("utf-16")).args == "été & demo <"
+    assert parse_string(xml).args == "été & demo <"
+
+
+def test_inclusion_directives_and_stylesheet_are_ignored() -> None:
+    scan = parse_string(
+        '<?xml-stylesheet href="sample.xsl"?><nmaprun>'
+        '<include xmlns="http://www.w3.org/2001/XInclude" href="sample.xml"/>'
+        '<host xmlns="urn:synthetic"/></nmaprun>'
+    )
+    assert scan.hosts == []
+
+
+def test_invalid_encoding_is_a_parse_error() -> None:
+    with pytest.raises(NmapParseError, match="invalid XML"):
+        parse_string(b'<?xml version="1.0" encoding="UNKNOWN-ENCODING"?><nmaprun/>')
+
+
+def test_xml_byte_limit_includes_utf8_encoding_and_applies_to_files(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(parser, "MAX_XML_BYTES", 24)
+    exact = '<nmaprun args="éé"/>'
+    exact += " " * (24 - len(exact.encode()))
+    source = tmp_path / "input.xml"
+    source.write_bytes(exact.encode())
+    assert parse_file(source).args == "éé"
+    with pytest.raises(NmapParseError, match="24-byte limit"):
+        parse_string(exact + "é")
+    source.write_bytes((exact + " ").encode())
+    with pytest.raises(NmapParseError, match="24-byte limit"):
+        parse_file(source)
+
+
+def test_tree_depth_limit(monkeypatch) -> None:
+    monkeypatch.setattr(parser, "MAX_XML_DEPTH", 3)
+    assert parse_string("<nmaprun><host><ports/></host></nmaprun>").host_count == 1
+    with pytest.raises(NmapParseError, match="3-level nesting limit"):
+        parse_string("<nmaprun><host><ports><port/></ports></host></nmaprun>")
+
+
+def test_element_limit_counts_ignored_elements(monkeypatch) -> None:
+    monkeypatch.setattr(parser, "MAX_XML_ELEMENTS", 3)
+    assert parse_string("<nmaprun><ignored/><host/></nmaprun>").host_count == 1
+    with pytest.raises(NmapParseError, match="3-element limit"):
+        parse_string("<nmaprun><ignored/><ignored/><host/></nmaprun>")
+
+
+def test_ports_outside_valid_range_are_skipped() -> None:
+    entries = "".join(f'<port portid="{value}"/>' for value in (-1, 0, 65535, 65536))
+    host = parse_string(f"<nmaprun><host><ports>{entries}</ports></host></nmaprun>").hosts[0]
+    assert [port.portid for port in host.ports] == [0, 65535]

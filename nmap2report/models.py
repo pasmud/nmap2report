@@ -70,7 +70,7 @@ class OSClass:
     vendor: str = ""
     osfamily: str = ""
     osgen: str = ""
-    accuracy: int = 0
+    accuracy: int | None = None
 
 
 @dataclass(slots=True)
@@ -78,7 +78,7 @@ class OSMatch:
     """An nmap OS fingerprint match, optionally with detailed classifications."""
 
     name: str = ""
-    accuracy: int = 0
+    accuracy: int | None = None
     os_classes: list[OSClass] = field(default_factory=list)
 
 
@@ -213,8 +213,8 @@ class Scan:
 
     @property
     def down_host_count(self) -> int:
-        """Number of hosts with a non-``up`` status."""
-        return sum(1 for host in self.hosts if not host.is_up)
+        """Number of hosts with an explicit ``down`` status."""
+        return sum(1 for host in self.hosts if host.status == "down")
 
     @property
     def open_port_count(self) -> int:

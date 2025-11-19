@@ -9,10 +9,12 @@ command line.
 
 from __future__ import annotations
 
+import stat
 import xml.etree.ElementTree as ET
 from os import PathLike
 from pathlib import Path
 from typing import Final
+from xml.parsers import expat
 
 from .models import (
     Address,
@@ -31,6 +33,9 @@ from .models import (
 _HOST_TAG: Final = "host"
 _RUNSTATS_TAG: Final = "runstats"
 _SCANINFO_TAG: Final = "scaninfo"
+MAX_XML_BYTES: Final = 16 * 1024 * 1024
+MAX_XML_DEPTH: Final = 64
+MAX_XML_ELEMENTS: Final = 100_000
 
 
 class NmapParseError(ValueError):
@@ -45,11 +50,10 @@ def parse_file(path: str | PathLike[str]) -> Scan:
         OSError: If the file cannot be read.
     """
     source = Path(path)
-    try:
-        tree = ET.parse(source)
-    except ET.ParseError as exc:
-        raise NmapParseError(f"invalid XML in {source}: {exc}") from exc
-    return _parse_root(tree.getroot())
+    if not stat.S_ISREG(source.stat().st_mode):
+        raise OSError("input must be a regular file")
+    with source.open("rb") as stream:
+        return parse_string(stream.read(MAX_XML_BYTES + 1))
 
 
 def parse_string(xml: str | bytes) -> Scan:
@@ -58,17 +62,72 @@ def parse_string(xml: str | bytes) -> Scan:
     Raises:
         NmapParseError: If the input is not well-formed XML or not an nmap scan.
     """
+    if len(xml) > MAX_XML_BYTES:
+        raise NmapParseError(f"XML exceeds the {MAX_XML_BYTES:,}-byte limit")
+    if isinstance(xml, str):
+        try:
+            data = xml.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise NmapParseError("invalid Unicode in XML") from exc
+    else:
+        data = xml
+    if len(data) > MAX_XML_BYTES:
+        raise NmapParseError(f"XML exceeds the {MAX_XML_BYTES:,}-byte limit")
+    return _parse_root(_parse_xml(data, "UTF-8" if isinstance(xml, str) else None))
+
+
+def _parse_xml(data: bytes, encoding: str | None) -> ET.Element:
+    """Enforce XML limits during parsing, before allocating a full tree."""
+    # Keep literal names so a long namespace URI is never copied into every tag.
+    parser = expat.ParserCreate(encoding)
+    builder = ET.TreeBuilder()
+    open_tags: list[str] = []
+    elements = 0
+
+    def start(name: str, attrs: dict[str, str]) -> None:
+        nonlocal elements
+        elements += 1
+        if len(open_tags) >= MAX_XML_DEPTH:
+            raise NmapParseError(f"XML exceeds the {MAX_XML_DEPTH}-level nesting limit")
+        if elements > MAX_XML_ELEMENTS:
+            raise NmapParseError(f"XML exceeds the {MAX_XML_ELEMENTS:,}-element limit")
+        # A default namespace also makes this branch foreign to the nmap schema.
+        if attrs.get("xmlns"):
+            name = ":" + name
+        open_tags.append(name)
+        builder.start(name, attrs)
+
+    def end(_name: str) -> None:
+        builder.end(open_tags.pop())
+
+    def doctype(
+        name: str, system_id: str | None, public_id: str | None, has_subset: int
+    ) -> None:
+        if name != "nmaprun" or system_id is not None or public_id is not None or has_subset:
+            raise NmapParseError("only a bare <!DOCTYPE nmaprun> declaration is allowed")
+
+    def reject_external(*_args: object) -> int:
+        raise NmapParseError("external XML entities are not allowed")
+
+    parser.StartElementHandler = start
+    parser.EndElementHandler = end
+    # All supported fields are attributes; discard character data as it is parsed.
+    parser.StartDoctypeDeclHandler = doctype
+    parser.ExternalEntityRefHandler = reject_external
+    parser.SetParamEntityParsing(expat.XML_PARAM_ENTITY_PARSING_NEVER)
     try:
-        root = ET.fromstring(xml)
-    except ET.ParseError as exc:
+        parser.Parse(data, True)
+    except NmapParseError:
+        raise
+    except (expat.ExpatError, LookupError, ValueError) as exc:
         raise NmapParseError(f"invalid XML: {exc}") from exc
-    return _parse_root(root)
+    return builder.close()
 
 
 def _parse_root(root: ET.Element) -> Scan:
     if root.tag != "nmaprun":
         raise NmapParseError(
-            f"not an nmap XML document: expected <nmaprun> root, found <{root.tag}>"
+            f"not an nmap XML document: expected <nmaprun> root, found <{root.tag:.80}>"
         )
 
     scan = Scan(
@@ -101,7 +160,7 @@ def _parse_host(element: ET.Element) -> Host:
         addresses=_parse_addresses(element),
         hostnames=_parse_hostnames(element),
         ports=_parse_ports(element),
-        scripts=_parse_scripts(element),
+        scripts=_parse_scripts(element) + _parse_scripts(element, "hostscript/script"),
         os_matches=_parse_os_matches(element),
         starttime=_optional_int(element.get("starttime")),
         endtime=_optional_int(element.get("endtime")),
@@ -144,7 +203,7 @@ def _parse_ports(element: ET.Element) -> list[Port]:
 
 def _parse_port(element: ET.Element) -> Port | None:
     portid = _optional_int(element.get("portid"))
-    if portid is None:
+    if portid is None or not 0 <= portid <= 65535:
         return None
 
     state = element.find("state")
@@ -172,10 +231,10 @@ def _parse_service(element: ET.Element | None) -> Service | None:
     )
 
 
-def _parse_scripts(element: ET.Element) -> list[Script]:
+def _parse_scripts(element: ET.Element, path: str = "script") -> list[Script]:
     return [
         Script(id=script.get("id", ""), output=script.get("output", ""))
-        for script in element.findall("script")
+        for script in element.findall(path)
         if script.get("id")
     ]
 
@@ -193,20 +252,25 @@ def _parse_os_matches(element: ET.Element) -> list[OSMatch]:
         matches.append(
             OSMatch(
                 name=name,
-                accuracy=_int_attr(match, "accuracy"),
+                accuracy=_accuracy(match),
                 os_classes=[
                     OSClass(
                         os_type=osclass.get("type", ""),
                         vendor=osclass.get("vendor", ""),
                         osfamily=osclass.get("osfamily", ""),
                         osgen=osclass.get("osgen", ""),
-                        accuracy=_int_attr(osclass, "accuracy"),
+                        accuracy=_accuracy(osclass),
                     )
                     for osclass in match.findall("osclass")
                 ],
             )
         )
     return matches
+
+
+def _accuracy(element: ET.Element) -> int | None:
+    value = _optional_int(element.get("accuracy"))
+    return value if value is not None and 0 <= value <= 100 else None
 
 
 def _parse_runstats(element: ET.Element | None) -> RunStats:
@@ -226,15 +290,8 @@ def _parse_runstats(element: ET.Element | None) -> RunStats:
 
 
 def _int_attr(element: ET.Element | None, name: str, default: int = 0) -> int:
-    if element is None:
-        return default
-    value = element.get(name)
-    if value is None:
-        return default
-    try:
-        return int(value)
-    except ValueError:
-        return default
+    value = _optional_int(element.get(name)) if element is not None else None
+    return value if value is not None else default
 
 
 def _float_attr(element: ET.Element | None, name: str, default: float = 0.0) -> float:
@@ -250,7 +307,7 @@ def _float_attr(element: ET.Element | None, name: str, default: float = 0.0) -> 
 
 
 def _optional_int(value: str | None) -> int | None:
-    if value is None:
+    if value is None or len(value) > 32:
         return None
     try:
         return int(value)

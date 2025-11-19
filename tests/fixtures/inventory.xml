@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE nmaprun>
+<nmaprun scanner="nmap" version="7.95" start="1762000000">
+  <!-- Entirely synthetic; reserved documentation addresses and names. -->
+  <host comment="Training &amp; inventory">
+    <status state="up"/>
+    <address addr="192.0.2.10" addrtype="ipv4"/>
+    <address addr="2001:db8::10" addrtype="ipv6"/>
+    <hostnames><hostname name="web.example.test" type="PTR"/></hostnames>
+    <ports>
+      <port protocol="tcp" portid="443">
+        <state state="open" reason="syn-ack"/>
+        <service name="https" product="Example Web" version="1.0"/>
+        <script id="sample-banner" output="demo &lt;banner&gt;&#10;second line"/>
+      </port>
+      <port protocol="tcp" portid="8443"><state state="filtered"/></port>
+      <port protocol="udp" portid="53"><state state="open|filtered"/></port>
+    </ports>
+    <os><osmatch name="Example OS" accuracy="90"/></os>
+    <hostscript><script id="sample-note" output="Synthetic host observation"/></hostscript>
+  </host>
+  <host>
+    <status state="down"/>
+    <address addr="192.0.2.20" addrtype="ipv4"/>
+  </host>
+  <host><address addr="192.0.2.30" addrtype="ipv4"/></host>
+  <runstats><finished time="1762000032" elapsed="32" exit="success"/></runstats>
+</nmaprun>
