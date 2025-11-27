@@ -20,5 +20,5 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: python -m pip install '.[dev]'
       - run: nmap2report --version
-      - run: python -m pytest -q --basetemp=.pytest_cache/tmp
+      - run: python -m pytest -q
       - run: ruff check .

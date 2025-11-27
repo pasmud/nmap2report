@@ -81,7 +81,7 @@ nmap2report INPUT [-f {html,markdown,csv}] [-o OUTPUT] [--title TITLE]
 ```sh
 python3 -m venv .venv
 .venv/bin/python -m pip install '.[dev]'
-.venv/bin/python -m pytest -q --basetemp=.pytest_cache/tmp
+.venv/bin/python -m pytest -q
 .venv/bin/ruff check .
 .venv/bin/nmap2report --version
 ```
