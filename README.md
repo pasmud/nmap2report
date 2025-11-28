@@ -38,7 +38,7 @@ python3 -m venv .venv
 ## Command reference
 
 ```text
-nmap2report INPUT [-f {html,markdown,csv}] [-o OUTPUT] [--title TITLE]
+nmap2report INPUT [-f {html,markdown,csv}] [-o OUTPUT] [--title TITLE] [--summary-only]
 ```
 
 - `INPUT` is a local, regular Nmap XML file, or `-` to read one XML document
@@ -48,6 +48,9 @@ nmap2report INPUT [-f {html,markdown,csv}] [-o OUTPUT] [--title TITLE]
 - `--output` writes a new UTF-8 file; an existing path is never overwritten. With
   no `--output`, the report is written to stdout as UTF-8.
 - `--title` is optional for HTML and Markdown and is rejected for CSV.
+- `--summary-only` keeps the title and the same aggregate counts in HTML or
+  Markdown, but skips scan metadata, the host overview, and all host details.
+  CSV remains a row-based inventory and does not accept this option.
 - Exit codes: `0` for success, `1` for input, parsing, or output errors, and `2`
   for invalid command-line usage. Errors go to stderr. Invalid XML does not
   create an output file; a write failure can leave a partial file.

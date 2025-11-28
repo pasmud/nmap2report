@@ -87,6 +87,24 @@ def test_csv_machine_readable(tmp_path) -> None:
     assert [row["host_status"] for row in rows[-2:]] == ["down", "unknown"]
 
 
+@pytest.mark.parametrize("fmt", ["html", "markdown"])
+def test_summary_only_keeps_counts_and_omits_details(fmt) -> None:
+    data = FIXTURE.read_bytes().replace(b'<nmaprun scanner=', b'<nmaprun args="demo args" scanner=')
+    result = cli("-", "-f", fmt, "--summary-only", "--title", "Inventory counts", input_bytes=data)
+    assert result.returncode == 0
+    assert not result.stderr
+    document = result.stdout.decode()
+    assert "Inventory counts" in document
+    for label, count in [("Host entries", 3), ("Up", 1), ("Down", 1),
+                         ("Other / unknown", 1), ("Open ports", 1)]:
+        if fmt == "html":
+            assert f'>{count}</span><span class="stat-label">{label}</span>' in document
+        else:
+            assert f"- **{label}:** {count}\n" in document
+    for detail in ("demo args", "web.example", "192.0.2.10", "8443", "sample-banner", "Example OS"):
+        assert detail not in document
+
+
 @pytest.mark.parametrize("xml, message", [
     (None, b"No such file"),
     ("<nmaprun>", b"invalid XML"),
@@ -112,7 +130,9 @@ def test_existing_output_is_never_overwritten(tmp_path) -> None:
     assert destination.read_bytes() == b"keep this"
 
 
-@pytest.mark.parametrize("options", [[], ["-f", "json"], ["-f", "csv", "--title", "Test"]])
+@pytest.mark.parametrize("options", [
+    [], ["-f", "json"], ["-f", "csv", "--title", "Test"], ["-f", "csv", "--summary-only"],
+])
 def test_usage_errors(options) -> None:
     result = cli(*(options + [FIXTURE]) if options else [])
     assert result.returncode == 2

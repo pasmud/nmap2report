@@ -289,15 +289,18 @@ def _html_host(index: int, host: Host) -> str:
     )
 
 
-def render_html(scan: Scan, title: str | None = None) -> str:
-    """Render a complete, self-contained HTML report for *scan*."""
+def render_html(scan: Scan, title: str | None = None, *, summary_only: bool = False) -> str:
+    """Render self-contained HTML, optionally limited to the aggregate counts."""
     document_title = _clean_title(title)
-    summary = summarize(scan)
-    body = _summary_section(summary) + _host_overview(scan)
-    body += "\n".join(_html_host(index, host) for index, host in enumerate(scan.hosts, 1))
-    meta = " &middot; ".join(
-        f"{label}: <code>{_escape(value)}</code>" for label, value in _scan_meta(scan)
-    )
+    body = _summary_section(summarize(scan))
+    meta_line = ""
+    if not summary_only:
+        body += _host_overview(scan)
+        body += "\n".join(_html_host(index, host) for index, host in enumerate(scan.hosts, 1))
+        meta = " &middot; ".join(
+            f"{label}: <code>{_escape(value)}</code>" for label, value in _scan_meta(scan)
+        )
+        meta_line = f'<p class="meta">{meta}</p>\n'
     return (
         "<!doctype html>\n"
         '<html lang="en">\n<head>\n<meta charset="utf-8">\n'
@@ -309,7 +312,7 @@ def render_html(scan: Scan, title: str | None = None) -> str:
         "</head>\n<body>\n"
         '<header class="page-header">\n'
         f"<h1>{_escape(document_title)}</h1>\n"
-        f'<p class="meta">{meta}</p>\n'
+        f"{meta_line}"
         "</header>\n<main>\n"
         f"{body}\n"
         "</main>\n"
@@ -330,12 +333,16 @@ def _md_script(script: Script, context: str) -> str:
     return f"**{context}:** {_md(script.id)}\n\n{fence}\n{output}\n{fence}\n"
 
 
-def render_markdown(scan: Scan, title: str | None = None) -> str:
-    """Render a GitHub-flavored Markdown report with untrusted data as text."""
+def render_markdown(scan: Scan, title: str | None = None, *, summary_only: bool = False) -> str:
+    """Render GitHub-flavored Markdown, optionally limited to the aggregate counts."""
     lines = [f"# {_md(_clean_title(title))}", ""]
-    lines.extend(f"- **{label}:** {_md(value)}" for label, value in _scan_meta(scan))
-    lines.extend(("", "## Summary", ""))
+    if not summary_only:
+        lines.extend(f"- **{label}:** {_md(value)}" for label, value in _scan_meta(scan))
+        lines.append("")
+    lines.extend(("## Summary", ""))
     lines.extend(f"- **{label}:** {value}" for label, value in _summary_items(summarize(scan)))
+    if summary_only:
+        return "\n".join((*lines, "", _REPORT_NOTE, ""))
     if not scan.hosts:
         lines.extend(("", "No host entries were recorded."))
     for host in scan.hosts:

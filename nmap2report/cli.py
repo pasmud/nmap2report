@@ -22,10 +22,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("-o", "--output", type=Path, help="new output file (default: stdout)")
     parser.add_argument("--title", help="custom report title (HTML and Markdown only)")
+    parser.add_argument(
+        "--summary-only", action="store_true",
+        help="show only aggregate counts (HTML and Markdown)",
+    )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     args = parser.parse_args(argv)
     if args.format == "csv" and args.title is not None:
         parser.error("--title is only available for HTML and Markdown")
+    if args.format == "csv" and args.summary_only:
+        parser.error("--summary-only is only available for HTML and Markdown")
 
     try:
         scan = parse_stream(sys.stdin.buffer) if args.input == "-" else parse_file(args.input)
@@ -33,7 +39,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             report = render_csv(scan)
         else:
             render = render_html if args.format == "html" else render_markdown
-            report = render(scan, args.title)
+            report = render(scan, args.title, summary_only=args.summary_only)
         if args.output is None:
             sys.stdout.buffer.write(report.encode("utf-8"))
             sys.stdout.buffer.flush()
