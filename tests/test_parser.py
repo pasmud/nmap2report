@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import textwrap
+from io import BytesIO
 
 import pytest
 
 from nmap2report import parser
-from nmap2report.parser import NmapParseError, parse_file, parse_string
+from nmap2report.parser import NmapParseError, parse_file, parse_stream, parse_string
 
 SAMPLE_XML = textwrap.dedent(
     """\
@@ -145,6 +146,17 @@ def test_parse_file_reads_xml(tmp_path) -> None:
     assert scan.hosts[1].display_name == "db01.example.test"
 
 
+def test_parse_stream_handles_short_reads_and_preserves_xml_encoding() -> None:
+    class ShortReads(BytesIO):
+        def read(self, size=-1):
+            return super().read(min(size, 3))
+
+    xml = '<?xml version="1.0" encoding="UTF-16"?><nmaprun args="été"/>'
+    with ShortReads(xml.encode("utf-16")) as source:
+        assert parse_stream(source).args == "été"
+        assert not source.closed
+
+
 def test_wrong_root_raises_clear_error() -> None:
     try:
         parse_string("<report><host/></report>")
@@ -268,18 +280,23 @@ def test_invalid_encoding_is_a_parse_error() -> None:
         parse_string(b'<?xml version="1.0" encoding="UNKNOWN-ENCODING"?><nmaprun/>')
 
 
-def test_xml_byte_limit_includes_utf8_encoding_and_applies_to_files(monkeypatch, tmp_path) -> None:
+def test_xml_byte_limit_applies_to_text_files_and_streams(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(parser, "MAX_XML_BYTES", 24)
     exact = '<nmaprun args="éé"/>'
     exact += " " * (24 - len(exact.encode()))
     source = tmp_path / "input.xml"
     source.write_bytes(exact.encode())
     assert parse_file(source).args == "éé"
+    assert parse_stream(BytesIO(exact.encode())).args == "éé"
     with pytest.raises(NmapParseError, match="24-byte limit"):
         parse_string(exact + "é")
     source.write_bytes((exact + " ").encode())
     with pytest.raises(NmapParseError, match="24-byte limit"):
         parse_file(source)
+    with BytesIO(source.read_bytes() + b"unread") as stream:
+        with pytest.raises(NmapParseError, match="24-byte limit"):
+            parse_stream(stream)
+        assert stream.read() == b"unread"
 
 
 def test_tree_depth_limit(monkeypatch) -> None:

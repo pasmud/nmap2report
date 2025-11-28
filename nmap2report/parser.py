@@ -13,7 +13,7 @@ import stat
 import xml.etree.ElementTree as ET
 from os import PathLike
 from pathlib import Path
-from typing import Final
+from typing import BinaryIO, Final
 from xml.parsers import expat
 
 from .models import (
@@ -53,7 +53,21 @@ def parse_file(path: str | PathLike[str]) -> Scan:
     if not stat.S_ISREG(source.stat().st_mode):
         raise OSError("input must be a regular file")
     with source.open("rb") as stream:
-        return parse_string(stream.read(MAX_XML_BYTES + 1))
+        return parse_stream(stream)
+
+
+def parse_stream(stream: BinaryIO) -> Scan:
+    """Parse from a blocking binary stream without closing it.
+
+    At most one byte past the XML size limit is read to detect oversized input.
+    """
+    data = bytearray()
+    while len(data) <= MAX_XML_BYTES:
+        chunk = stream.read(min(64 * 1024, MAX_XML_BYTES + 1 - len(data)))
+        if not chunk:
+            break
+        data.extend(chunk)
+    return parse_string(bytes(data))
 
 
 def parse_string(xml: str | bytes) -> Scan:

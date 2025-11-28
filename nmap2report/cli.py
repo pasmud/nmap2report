@@ -8,14 +8,14 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from . import __version__
-from .parser import NmapParseError, parse_file
+from .parser import NmapParseError, parse_file, parse_stream
 from .report import ReportLimitError, render_csv, render_html, render_markdown
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Convert one local XML file; return an exit status."""
+    """Convert XML from a local file or stdin; return an exit status."""
     parser = argparse.ArgumentParser(prog="nmap2report", description=__doc__)
-    parser.add_argument("input", type=Path, help="local nmap XML file")
+    parser.add_argument("input", help="local nmap XML file, or - for stdin")
     parser.add_argument(
         "-f", "--format", choices=("html", "markdown", "csv"), default="html",
         help="report format (default: html)",
@@ -28,7 +28,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("--title is only available for HTML and Markdown")
 
     try:
-        scan = parse_file(args.input)
+        scan = parse_stream(sys.stdin.buffer) if args.input == "-" else parse_file(args.input)
         if args.format == "csv":
             report = render_csv(scan)
         else:

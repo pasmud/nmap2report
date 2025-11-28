@@ -12,10 +12,10 @@ ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "tests" / "fixtures" / "inventory.xml"
 
 
-def cli(*args):
+def cli(*args, input_bytes=None):
     return subprocess.run(
         [sys.executable, "-m", "nmap2report", *args],
-        cwd=ROOT, capture_output=True, check=False, timeout=10,
+        cwd=ROOT, input=input_bytes, capture_output=True, check=False, timeout=10,
     )
 
 
@@ -33,6 +33,27 @@ def test_default_html_to_stdout() -> None:
     assert "Synthetic host observation" in report
     assert "<td>open|filtered</td>" in report
     assert '<span class="stat-value">1</span><span class="stat-label">Open ports</span>' in report
+
+
+def test_stdin_matches_file_input() -> None:
+    result = cli("-", input_bytes=FIXTURE.read_bytes())
+    assert result.returncode == 0
+    assert not result.stderr
+    assert result.stdout == cli(FIXTURE).stdout
+
+
+@pytest.mark.parametrize("data, message", [
+    (b"", b"invalid XML"),
+    (b"<!DOCTYPE nmaprun []><nmaprun/>", b"only a bare"),
+    (b"<nmaprun>" + b"<nested>" * 64, b"nesting limit"),
+    (b"<nmaprun>" + b"<entry/>" * 100_000, b"element limit"),
+])
+def test_stdin_rejects_invalid_xml_without_creating_output(tmp_path, data, message) -> None:
+    destination = tmp_path / "report.html"
+    result = cli("-", "-o", destination, input_bytes=data)
+    assert result.returncode == 1
+    assert message in result.stderr
+    assert not result.stdout and not destination.exists()
 
 
 def test_markdown_to_output_file(tmp_path) -> None:

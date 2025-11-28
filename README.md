@@ -41,7 +41,9 @@ python3 -m venv .venv
 nmap2report INPUT [-f {html,markdown,csv}] [-o OUTPUT] [--title TITLE]
 ```
 
-- `INPUT` is a local, regular Nmap XML file. One input is handled per invocation.
+- `INPUT` is a local, regular Nmap XML file, or `-` to read one XML document
+  from stdin (for example, `python3 -m nmap2report - < tests/fixtures/inventory.xml`).
+  The same XML limits apply to both. To read a file literally named `-`, use `./-`.
 - `--format` defaults to `html`. Format is never guessed from the output extension.
 - `--output` writes a new UTF-8 file; an existing path is never overwritten. With
   no `--output`, the report is written to stdout as UTF-8.
