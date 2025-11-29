@@ -39,6 +39,7 @@ python3 -m venv .venv
 
 ```text
 nmap2report INPUT [-f {html,markdown,csv}] [-o OUTPUT] [--title TITLE] [--summary-only]
+                 [--omit-script-output]
 ```
 
 - `INPUT` is a local, regular Nmap XML file, or `-` to read one XML document
@@ -51,6 +52,9 @@ nmap2report INPUT [-f {html,markdown,csv}] [-o OUTPUT] [--title TITLE] [--summar
 - `--summary-only` keeps the title and the same aggregate counts in HTML or
   Markdown, but skips scan metadata, the host overview, and all host details.
   CSV remains a row-based inventory and does not accept this option.
+- `--omit-script-output` removes host and port script entries, including their
+  IDs, from HTML and Markdown. CSV already excludes them. Other report fields
+  are unchanged; review those fields before sharing.
 - Exit codes: `0` for success, `1` for input, parsing, or output errors, and `2`
   for invalid command-line usage. Errors go to stderr. Invalid XML does not
   create an output file; a write failure can leave a partial file.

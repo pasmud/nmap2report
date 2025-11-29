@@ -261,7 +261,7 @@ def _os_labels(host: Host) -> list[str]:
     ]
 
 
-def _html_host(index: int, host: Host) -> str:
+def _html_host(index: int, host: Host, *, omit_script_output: bool) -> str:
     details = "".join(
         f'<p class="host-meta"><strong>{label}:</strong> {_escape(value)}</p>'
         for label, value in _host_meta(host)
@@ -273,14 +273,14 @@ def _html_host(index: int, host: Host) -> str:
         for port in host.ports:
             cells = "".join(f"<td>{_escape(value)}</td>" for value in _port_values(port))
             rows.append(f"<tr>{cells}</tr>")
-            if port.scripts:
+            if port.scripts and not omit_script_output:
                 scripts = "".join(_html_script(script) for script in port.scripts)
                 rows.append(f'<tr><td colspan="5">{scripts}</td></tr>')
         ports = f"<table><thead><tr>{headings}</tr></thead><tbody>{''.join(rows)}</tbody></table>"
     os_items = "".join(f"<li>{_escape(label)}</li>" for label in _os_labels(host))
     os_section = f'<h3>OS matches</h3><ul class="os-list">{os_items}</ul>' if os_items else ""
     host_scripts = ""
-    if host.scripts:
+    if host.scripts and not omit_script_output:
         host_scripts = "<h3>Host scripts</h3>" + "".join(map(_html_script, host.scripts))
     return (
         f'<section class="host" id="host-{index}">'
@@ -289,14 +289,20 @@ def _html_host(index: int, host: Host) -> str:
     )
 
 
-def render_html(scan: Scan, title: str | None = None, *, summary_only: bool = False) -> str:
-    """Render self-contained HTML, optionally limited to the aggregate counts."""
+def render_html(
+    scan: Scan, title: str | None = None, *,
+    summary_only: bool = False, omit_script_output: bool = False,
+) -> str:
+    """Render self-contained HTML with optional detail or script omission."""
     document_title = _clean_title(title)
     body = _summary_section(summarize(scan))
     meta_line = ""
     if not summary_only:
         body += _host_overview(scan)
-        body += "\n".join(_html_host(index, host) for index, host in enumerate(scan.hosts, 1))
+        body += "\n".join(
+            _html_host(index, host, omit_script_output=omit_script_output)
+            for index, host in enumerate(scan.hosts, 1)
+        )
         meta = " &middot; ".join(
             f"{label}: <code>{_escape(value)}</code>" for label, value in _scan_meta(scan)
         )
@@ -333,8 +339,11 @@ def _md_script(script: Script, context: str) -> str:
     return f"**{context}:** {_md(script.id)}\n\n{fence}\n{output}\n{fence}\n"
 
 
-def render_markdown(scan: Scan, title: str | None = None, *, summary_only: bool = False) -> str:
-    """Render GitHub-flavored Markdown, optionally limited to the aggregate counts."""
+def render_markdown(
+    scan: Scan, title: str | None = None, *,
+    summary_only: bool = False, omit_script_output: bool = False,
+) -> str:
+    """Render GitHub-flavored Markdown with optional detail or script omission."""
     lines = [f"# {_md(_clean_title(title))}", ""]
     if not summary_only:
         lines.extend(f"- **{label}:** {_md(value)}" for label, value in _scan_meta(scan))
@@ -354,16 +363,17 @@ def render_markdown(scan: Scan, title: str | None = None, *, summary_only: bool 
             lines.append("| " + " | ".join("---" for _ in _PORT_COLUMNS) + " |")
             for port in host.ports:
                 lines.append("| " + " | ".join(map(_md, _port_values(port))) + " |")
-            for port in host.ports:
-                for script in port.scripts:
-                    context = f"Port {port.portid} ({_md(port.protocol)}) script"
-                    lines.extend(("", _md_script(script, context)))
+            if not omit_script_output:
+                for port in host.ports:
+                    for script in port.scripts:
+                        context = f"Port {port.portid} ({_md(port.protocol)}) script"
+                        lines.extend(("", _md_script(script, context)))
         else:
             lines.append("No explicit port entries were recorded.")
         if host.os_matches:
             lines.extend(("", "### OS matches", ""))
             lines.extend(f"- {_md(label)}" for label in _os_labels(host))
-        if host.scripts:
+        if host.scripts and not omit_script_output:
             lines.extend(("", "### Host scripts", ""))
             lines.extend(_md_script(script, "Host script") for script in host.scripts)
     lines.extend(("", _REPORT_NOTE, ""))

@@ -105,6 +105,27 @@ def test_summary_only_keeps_counts_and_omits_details(fmt) -> None:
         assert detail not in document
 
 
+@pytest.mark.parametrize("fmt", ["html", "markdown", "csv"])
+def test_omit_script_output_for_sharing(fmt) -> None:
+    baseline = cli(FIXTURE, "-f", fmt)
+    shared = cli(FIXTURE, "-f", fmt, "--omit-script-output")
+    assert baseline.returncode == shared.returncode == 0
+    assert not shared.stderr
+    dash = b"&#45;" if fmt == "markdown" else b"-"
+    markers = (
+        b"sample" + dash + b"banner", b"second line",
+        b"sample" + dash + b"note", b"Synthetic host observation",
+    )
+    assert all(marker not in shared.stdout for marker in markers)
+    assert b"Example Web 1" in shared.stdout
+    if fmt == "csv":
+        assert shared.stdout == baseline.stdout
+    else:
+        assert all(marker in baseline.stdout for marker in markers)
+        assert b"Example OS" in shared.stdout
+        assert b"Open ports" in shared.stdout
+
+
 @pytest.mark.parametrize("xml, message", [
     (None, b"No such file"),
     ("<nmaprun>", b"invalid XML"),

@@ -26,6 +26,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--summary-only", action="store_true",
         help="show only aggregate counts (HTML and Markdown)",
     )
+    parser.add_argument(
+        "--omit-script-output", action="store_true",
+        help="omit all host and port script entries (CSV already excludes them)",
+    )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     args = parser.parse_args(argv)
     if args.format == "csv" and args.title is not None:
@@ -39,7 +43,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             report = render_csv(scan)
         else:
             render = render_html if args.format == "html" else render_markdown
-            report = render(scan, args.title, summary_only=args.summary_only)
+            report = render(
+                scan, args.title, summary_only=args.summary_only,
+                omit_script_output=args.omit_script_output,
+            )
         if args.output is None:
             sys.stdout.buffer.write(report.encode("utf-8"))
             sys.stdout.buffer.flush()
