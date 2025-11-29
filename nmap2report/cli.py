@@ -3,13 +3,27 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from . import __version__
 from .parser import NmapParseError, parse_file, parse_stream
 from .report import ReportLimitError, render_csv, render_html, render_markdown
+
+
+def _publish_report(destination: Path, report: str) -> None:
+    """Publish a completely written report without replacing any existing path."""
+    with TemporaryDirectory(dir=destination.parent, prefix=".nmap2report-") as staging:
+        staged = Path(staging) / "report"
+        with staged.open("x", encoding="utf-8", newline="") as stream:
+            stream.write(report)
+            stream.flush()
+            os.fsync(stream.fileno())
+        # Unlike rename, link fails if the destination appeared while writing.
+        os.link(staged, destination)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -51,8 +65,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             sys.stdout.buffer.write(report.encode("utf-8"))
             sys.stdout.buffer.flush()
         else:
-            with args.output.open("x", encoding="utf-8", newline="") as stream:
-                stream.write(report)
+            _publish_report(args.output, report)
     except (NmapParseError, ReportLimitError, OSError, UnicodeError) as exc:
         # Keep untrusted XML names and paths from controlling the terminal.
         message = "".join(char if char.isprintable() else repr(char)[1:-1] for char in str(exc))

@@ -1,12 +1,15 @@
 """End-to-end tests: run the real CLI with local synthetic XML."""
 
 import csv
+import errno
 import io
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+
+from nmap2report import cli as cli_module
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "tests" / "fixtures" / "inventory.xml"
@@ -149,6 +152,48 @@ def test_existing_output_is_never_overwritten(tmp_path) -> None:
     assert result.returncode == 1
     assert b"File exists" in result.stderr
     assert destination.read_bytes() == b"keep this"
+    assert list(tmp_path.iterdir()) == [destination]
+
+
+def test_dangling_output_symlink_is_not_followed_or_replaced(tmp_path) -> None:
+    destination, target = tmp_path / "report.html", tmp_path / "missing.html"
+    destination.symlink_to(target)
+    result = cli(FIXTURE, "-o", destination)
+    assert result.returncode == 1
+    assert destination.readlink() == target
+    assert not target.exists()
+    assert list(tmp_path.iterdir()) == [destination]
+
+
+def test_failed_file_sync_never_publishes_output(tmp_path, monkeypatch, capsys) -> None:
+    destination = tmp_path / "report.html"
+
+    def fail_sync(_fd):
+        assert not destination.exists()
+        raise OSError(errno.ENOSPC, "simulated disk full")
+
+    monkeypatch.setattr(cli_module.os, "fsync", fail_sync)
+    assert cli_module.main([str(FIXTURE), "-o", str(destination)]) == 1
+    captured = capsys.readouterr()
+    assert "simulated disk full" in captured.err
+    assert not captured.out and not list(tmp_path.iterdir())
+
+
+def test_output_created_during_publication_is_preserved(tmp_path, monkeypatch, capsys) -> None:
+    destination = tmp_path / "report.html"
+    real_link = cli_module.os.link
+
+    def create_competing_output(staged, path):
+        assert path == destination and not path.exists()
+        assert staged.read_bytes().endswith(b"</body>\n</html>\n")
+        path.write_bytes(b"another writer's report")
+        return real_link(staged, path)
+
+    monkeypatch.setattr(cli_module.os, "link", create_competing_output)
+    assert cli_module.main([str(FIXTURE), "-o", str(destination)]) == 1
+    assert "File exists" in capsys.readouterr().err
+    assert destination.read_bytes() == b"another writer's report"
+    assert list(tmp_path.iterdir()) == [destination]
 
 
 @pytest.mark.parametrize("options", [

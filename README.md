@@ -46,8 +46,10 @@ nmap2report INPUT [-f {html,markdown,csv}] [-o OUTPUT] [--title TITLE] [--summar
   from stdin (for example, `python3 -m nmap2report - < tests/fixtures/inventory.xml`).
   The same XML limits apply to both. To read a file literally named `-`, use `./-`.
 - `--format` defaults to `html`. Format is never guessed from the output extension.
-- `--output` writes a new UTF-8 file; an existing path is never overwritten. With
-  no `--output`, the report is written to stdout as UTF-8.
+- `--output` writes a new UTF-8 file. The destination appears only after the
+  report is fully written, and existing paths (including symlinks) are never
+  overwritten. The output directory must support hard links. With no
+  `--output`, the report is written directly to stdout as UTF-8.
 - `--title` is optional for HTML and Markdown and is rejected for CSV.
 - `--summary-only` keeps the title and the same aggregate counts in HTML or
   Markdown, but skips scan metadata, the host overview, and all host details.
@@ -56,8 +58,7 @@ nmap2report INPUT [-f {html,markdown,csv}] [-o OUTPUT] [--title TITLE] [--summar
   IDs, from HTML and Markdown. CSV already excludes them. Other report fields
   are unchanged; review those fields before sharing.
 - Exit codes: `0` for success, `1` for input, parsing, or output errors, and `2`
-  for invalid command-line usage. Errors go to stderr. Invalid XML does not
-  create an output file; a write failure can leave a partial file.
+  for invalid command-line usage. Errors go to stderr.
 
 ## Report coverage and limits
 
