@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "nmap2report"
 version = "0.1.0"
-description = "Convert nmap XML scans into self-contained HTML, Markdown, and CSV reports"
+description = "Convert nmap XML scans into HTML, Markdown, CSV, and JSON reports"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"

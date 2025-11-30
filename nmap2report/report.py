@@ -1,14 +1,15 @@
-"""Render parsed nmap scans as standalone HTML, Markdown, and CSV reports."""
+"""Render parsed nmap scans as HTML, Markdown, CSV, and JSON reports."""
 
 from __future__ import annotations
 
 import csv
 import html
 import io
+import json
 import re
 import string
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from typing import Final
 
@@ -132,6 +133,11 @@ def summarize(scan: Scan) -> ReportSummary:
         open_ports=scan.open_port_count,
         hosts_other=scan.host_count - up - down,
     )
+
+
+def render_json_summary(scan: Scan) -> str:
+    """Render only the aggregate counts, with stable key order and whitespace."""
+    return json.dumps(asdict(summarize(scan)), sort_keys=True, indent=2) + "\n"
 
 
 def _escape(value: object) -> str:

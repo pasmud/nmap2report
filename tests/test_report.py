@@ -2,6 +2,7 @@
 
 import csv
 import io
+import json
 from html.parser import HTMLParser
 
 import pytest
@@ -85,3 +86,22 @@ def test_empty_scan_is_explicit_in_each_format() -> None:
     assert "No host entries were recorded." in report.render_html(scan)
     assert "No host entries were recorded." in report.render_markdown(scan)
     assert list(csv.DictReader(io.StringIO(report.render_csv(scan), newline=""))) == []
+    assert json.loads(report.render_json_summary(scan)) == {
+        "hosts_total": 0, "hosts_up": 0, "hosts_down": 0, "hosts_other": 0, "open_ports": 0,
+    }
+
+
+def test_json_summary_counts_explicit_entries_instead_of_run_totals() -> None:
+    scan = parse_string("""<nmaprun>
+      <host><status state="unrecognized"/><ports>
+        <extraports state="open" count="500"/>
+        <port portid="bad"><state state="open"/></port>
+        <port portid="443"><state state="open"/></port>
+        <port portid="443"><state state="open"/></port>
+        <port portid="8443"><state state="open|filtered"/></port>
+      </ports></host>
+      <runstats><hosts total="800" up="700" down="100"/></runstats>
+    </nmaprun>""")
+    assert json.loads(report.render_json_summary(scan)) == {
+        "hosts_total": 1, "hosts_up": 0, "hosts_down": 0, "hosts_other": 1, "open_ports": 2,
+    }

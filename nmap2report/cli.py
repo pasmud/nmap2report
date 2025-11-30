@@ -11,7 +11,7 @@ from tempfile import TemporaryDirectory
 
 from . import __version__
 from .parser import NmapParseError, parse_file, parse_stream
-from .report import ReportLimitError, render_csv, render_html, render_markdown
+from .report import ReportLimitError, render_csv, render_html, render_json_summary, render_markdown
 
 
 def _publish_report(destination: Path, report: str) -> None:
@@ -31,30 +31,32 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="nmap2report", description=__doc__)
     parser.add_argument("input", help="local nmap XML file, or - for stdin")
     parser.add_argument(
-        "-f", "--format", choices=("html", "markdown", "csv"), default="html",
+        "-f", "--format", choices=("html", "markdown", "csv", "json"), default="html",
         help="report format (default: html)",
     )
     parser.add_argument("-o", "--output", type=Path, help="new output file (default: stdout)")
     parser.add_argument("--title", help="custom report title (HTML and Markdown only)")
     parser.add_argument(
         "--summary-only", action="store_true",
-        help="show only aggregate counts (HTML and Markdown)",
+        help="show only aggregate counts (JSON is already a summary)",
     )
     parser.add_argument(
         "--omit-script-output", action="store_true",
-        help="omit all host and port script entries (CSV already excludes them)",
+        help="omit all host and port script entries (CSV and JSON already exclude them)",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     args = parser.parse_args(argv)
-    if args.format == "csv" and args.title is not None:
+    if args.format not in {"html", "markdown"} and args.title is not None:
         parser.error("--title is only available for HTML and Markdown")
     if args.format == "csv" and args.summary_only:
-        parser.error("--summary-only is only available for HTML and Markdown")
+        parser.error("--summary-only is not available for CSV")
 
     try:
         scan = parse_stream(sys.stdin.buffer) if args.input == "-" else parse_file(args.input)
         if args.format == "csv":
             report = render_csv(scan)
+        elif args.format == "json":
+            report = render_json_summary(scan)
         else:
             render = render_html if args.format == "html" else render_markdown
             report = render(

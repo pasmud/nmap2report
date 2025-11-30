@@ -1,9 +1,10 @@
 # nmap2report
 
 Turn a saved Nmap XML file into a standalone HTML report, a GitHub-flavored
-Markdown handoff, or a CSV inventory. The reports show what the file recorded:
-host and port states, service labels, and, in the narrative formats, OS matches
-and script output. No Nmap installation or network connection is required.
+Markdown handoff, a CSV inventory, or a counts-only JSON summary. The detailed
+reports show recorded host and port states and service labels; HTML and
+Markdown also show OS matches and script output. No Nmap installation or
+network connection is required.
 
 ## Quickstart
 
@@ -16,6 +17,7 @@ mkdir -p reports
 python3 -m nmap2report tests/fixtures/inventory.xml -o reports/inventory.html
 python3 -m nmap2report tests/fixtures/inventory.xml -f markdown --title "Lab inventory" -o reports/inventory.md
 python3 -m nmap2report tests/fixtures/inventory.xml -f csv -o reports/inventory.csv
+python3 -m nmap2report tests/fixtures/inventory.xml -f json -o reports/summary.json
 ```
 
 Open `reports/inventory.html` in a browser. The summary shows **3 host entries**
@@ -38,8 +40,8 @@ python3 -m venv .venv
 ## Command reference
 
 ```text
-nmap2report INPUT [-f {html,markdown,csv}] [-o OUTPUT] [--title TITLE] [--summary-only]
-                 [--omit-script-output]
+nmap2report INPUT [-f {html,markdown,csv,json}] [-o OUTPUT] [--title TITLE]
+                 [--summary-only] [--omit-script-output]
 ```
 
 - `INPUT` is a local, regular Nmap XML file, or `-` to read one XML document
@@ -50,13 +52,13 @@ nmap2report INPUT [-f {html,markdown,csv}] [-o OUTPUT] [--title TITLE] [--summar
   report is fully written, and existing paths (including symlinks) are never
   overwritten. The output directory must support hard links. With no
   `--output`, the report is written directly to stdout as UTF-8.
-- `--title` is optional for HTML and Markdown and is rejected for CSV.
+- `--title` is optional for HTML and Markdown only.
 - `--summary-only` keeps the title and the same aggregate counts in HTML or
   Markdown, but skips scan metadata, the host overview, and all host details.
-  CSV remains a row-based inventory and does not accept this option.
+  JSON is already counts-only; CSV does not accept this option.
 - `--omit-script-output` removes host and port script entries, including their
-  IDs, from HTML and Markdown. CSV already excludes them. Other report fields
-  are unchanged; review those fields before sharing.
+  IDs, from HTML and Markdown. CSV and JSON already exclude them. Other report
+  fields are unchanged; review those fields before sharing.
 - Exit codes: `0` for success, `1` for input, parsing, or output errors, and `2`
   for invalid command-line usage. Errors go to stderr.
 
@@ -80,6 +82,11 @@ nmap2report INPUT [-f {html,markdown,csv}] [-o OUTPUT] [--title TITLE] [--summar
   prefix is part of the exported value; leave spreadsheet columns as text when
   importing untrusted data. CSV output is limited to 32 Mi characters because
   it may repeat host details across rows.
+- JSON contains the same five integer counts as the HTML and Markdown summary:
+  `hosts_down`, `hosts_other` (neither up nor down), `hosts_total`, `hosts_up`,
+  and `open_ports`. It contains no host identifiers or scan metadata. The keys
+  are sorted and the output ends in a newline, so equivalent counts produce
+  identical output for handoffs and diffs.
 - The XML root must be `<nmaprun>`. Input is limited to 16 MiB, 64 levels of XML
   nesting, and 100,000 elements, including ignored elements. Nmap's bare
   `<!DOCTYPE nmaprun>` is accepted; internal/external DTD subsets and custom

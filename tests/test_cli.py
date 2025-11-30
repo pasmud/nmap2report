@@ -90,6 +90,24 @@ def test_csv_machine_readable(tmp_path) -> None:
     assert [row["host_status"] for row in rows[-2:]] == ["down", "unknown"]
 
 
+def test_json_summary_is_byte_stable_from_file_or_stdin(tmp_path) -> None:
+    expected = (
+        b'{\n  "hosts_down": 1,\n  "hosts_other": 1,\n  "hosts_total": 3,\n'
+        b'  "hosts_up": 1,\n  "open_ports": 1\n}\n'
+    )
+    result = cli(FIXTURE, "-f", "json")
+    assert result.returncode == 0 and not result.stderr
+    assert result.stdout == expected
+
+    destination = tmp_path / "summary.json"
+    result = cli(
+        "-", "-f", "json", "--summary-only", "--omit-script-output", "-o", destination,
+        input_bytes=FIXTURE.read_bytes(),
+    )
+    assert result.returncode == 0 and not result.stdout and not result.stderr
+    assert destination.read_bytes() == expected
+
+
 @pytest.mark.parametrize("fmt", ["html", "markdown"])
 def test_summary_only_keeps_counts_and_omits_details(fmt) -> None:
     data = FIXTURE.read_bytes().replace(b'<nmaprun scanner=', b'<nmaprun args="demo args" scanner=')
@@ -197,7 +215,8 @@ def test_output_created_during_publication_is_preserved(tmp_path, monkeypatch, c
 
 
 @pytest.mark.parametrize("options", [
-    [], ["-f", "json"], ["-f", "csv", "--title", "Test"], ["-f", "csv", "--summary-only"],
+    [], ["-f", "text"], ["-f", "csv", "--title", "Test"], ["-f", "csv", "--summary-only"],
+    ["-f", "json", "--title", "Test"],
 ])
 def test_usage_errors(options) -> None:
     result = cli(*(options + [FIXTURE]) if options else [])
